@@ -1,1 +1,1 @@
-# QRGenerator
+# QRGenerators

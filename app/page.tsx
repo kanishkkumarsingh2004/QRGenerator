@@ -44,12 +44,14 @@ export default function QRGenerator() {
   const [errorLevel, setErrorLevel] = useState<'L' | 'M' | 'Q' | 'H'>('M');
   const [downloadFormat, setDownloadFormat] = useState<'png' | 'jpeg' | 'svg'>('png');
   const [showSuccess, setShowSuccess] = useState<boolean>(false);
-  
+  const [logoImage, setLogoImage] = useState<string | null>(null);
+  const [logoSize, setLogoSize] = useState<number>(25);
+
   const canvasRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     generateQRCode();
-  }, [data, size, color, bgColor, margin, errorLevel]);
+  }, [data, size, color, bgColor, margin, errorLevel, logoImage, logoSize]);
 
   const generateQRCode = async () => {
     const qrData = getDataForQRType();
@@ -85,12 +87,77 @@ export default function QRGenerator() {
         if (downloadFormat === 'jpeg') {
           options.rendererOpts = { quality: 0.92 };
         }
-        const url = await (QRCode.toDataURL as any)(qrData, options);
-        setQrCode(url as string);
+        
+        let qrCodeUrl = await (QRCode.toDataURL as any)(qrData, options);
+        
+        if (logoImage) {
+          qrCodeUrl = await addLogoToQRCode(qrCodeUrl, logoImage);
+        }
+        
+        setQrCode(qrCodeUrl as string);
       }
     } catch (error) {
       console.error('QR code generation failed:', error);
     }
+  };
+
+  const addLogoToQRCode = async (qrCodeUrl: string, logoUrl: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const qrImage = new (window as any).Image();
+      qrImage.crossOrigin = 'anonymous';
+      qrImage.src = qrCodeUrl;
+      
+      qrImage.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        if (!ctx) {
+          reject(new Error('Canvas context not available'));
+          return;
+        }
+        
+        canvas.width = qrImage.width;
+        canvas.height = qrImage.height;
+        
+        ctx.drawImage(qrImage, 0, 0);
+        
+        const logoImageObj = new (window as any).Image();
+        logoImageObj.crossOrigin = 'anonymous';
+        logoImageObj.src = logoUrl;
+        
+        logoImageObj.onload = () => {
+          const calculatedLogoSize = Math.min(canvas.width, canvas.height) * (logoSize / 100);
+          const x = (canvas.width - calculatedLogoSize) / 2;
+          const y = (canvas.height - calculatedLogoSize) / 2;
+          
+          ctx.save();
+          
+          ctx.beginPath();
+          ctx.arc(x + calculatedLogoSize / 2, y + calculatedLogoSize / 2, calculatedLogoSize / 2, 0, 2 * Math.PI);
+          ctx.clip();
+          
+          ctx.drawImage(
+            logoImageObj, 
+            x, 
+            y, 
+            calculatedLogoSize, 
+            calculatedLogoSize
+          );
+          
+          ctx.restore();
+          
+          resolve(canvas.toDataURL(downloadFormat === 'jpeg' ? 'image/jpeg' : 'image/png'));
+        };
+        
+        logoImageObj.onerror = () => {
+          reject(new Error('Failed to load logo'));
+        };
+      };
+      
+      qrImage.onerror = () => {
+        reject(new Error('Failed to load QR code'));
+      };
+    });
   };
 
   // Update QR code when download format changes
@@ -187,6 +254,8 @@ export default function QRGenerator() {
     setErrorLevel('M');
     setDownloadFormat('png');
     setQrCode('');
+    setLogoImage(null);
+    setLogoSize(25);
   };
 
   const handleCopy = async () => {
@@ -442,6 +511,64 @@ export default function QRGenerator() {
                     <option value="Q">Quartile (25%) - Medium</option>
                     <option value="H">High (30%) - Largest</option>
                   </select>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Logo Image</label>
+                  <div className="flex items-center gap-4">
+                    <label className="flex-1 flex items-center justify-center px-3 sm:px-4 py-2 sm:py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 hover:bg-gray-50 transition-all cursor-pointer">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files[0]) {
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                              setLogoImage(event.target?.result as string);
+                            };
+                            reader.readAsDataURL(e.target.files[0]);
+                          }
+                        }}
+                        className="hidden"
+                      />
+                      <span className="text-sm text-gray-600">
+                        {logoImage ? 'Change Logo' : 'Upload Logo'}
+                      </span>
+                    </label>
+                    {logoImage && (
+                      <button
+                        onClick={() => setLogoImage(null)}
+                        className="px-3 sm:px-4 py-2 sm:py-3 bg-red-500 text-white text-sm font-medium rounded-lg hover:bg-red-600 transition-all"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  {logoImage && (
+                    <>
+                      <div className="mt-3 flex items-center gap-3">
+                        <Image
+                          src={logoImage}
+                          alt="Logo Preview"
+                          width={60}
+                          height={60}
+                          className="rounded-lg object-contain"
+                        />
+                        <span className="text-sm text-gray-600">Logo added successfully</span>
+                      </div>
+                      <div className="mt-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Logo Size: {logoSize}%</label>
+                        <input
+                          type="range"
+                          min="10"
+                          max="40"
+                          value={logoSize}
+                          onChange={(e) => setLogoSize(Number(e.target.value))}
+                          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
